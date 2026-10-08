@@ -12,7 +12,7 @@ A GenLayer-native decentralized arbitration platform where AI validators resolve
 ## Contract
 
 - **Network:** GenLayer Bradbury Testnet (chain 4221)
-- **Contract:** `0x0000000000000000000000000000000000000000` (deployed address TBD)
+- **Contract:** `0x52F65805F656BC3a331f703AeEc858E9Fc2586C1`
 
 ## Quick Start
 

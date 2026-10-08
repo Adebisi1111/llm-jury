@@ -94,7 +94,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 </div>
 
 <script>
-const CONTRACT = '0x0000000000000000000000000000000000000000'; // Will be updated after deploy
+const CONTRACT = '0x52F65805F656BC3a331f703AeEc858E9Fc2586C1';
 const RPC = 'https://rpc-bradbury.genlayer.com';
 const EXPLORER = 'https://explorer-bradbury.genlayer.com';
 
@@ -102,19 +102,13 @@ let wallet = null;
 
 // Function selectors (keccak256 first 4 bytes)
 const SELECTORS = {
-  create_dispute: '0x', // Will compute
-  submit_defense: '0x',
-  run_arbitration: '0x',
-  get_dispute: '0x',
-  total_disputes: '0x',
-  list_pending: '0x',
+  create_dispute: '0x524e8db7',
+  submit_defense: '0x56696e7e',
+  run_arbitration: '0xa2ef2b30',
+  get_dispute: '0x7d2b99f7',
+  total_disputes: '0xf6819eab',
+  list_pending: '0x66596844',
 };
-
-// Compute selectors
-async function computeSelectors() {
-  // We'll use a simple approach: call the contract with known function signatures
-  // For now, use placeholder - will be set after deployment
-}
 
 // ABI encoding helpers
 function encodeString(str) {
@@ -195,8 +189,7 @@ async function createDispute() {
   document.getElementById('createStatus').innerHTML = '<div class="status status-info"><span class="spinner"></span>Creating dispute...</div>';
 
   try {
-    // create_dispute(string,string) selector
-    const selector = '0x8f283970'; // create_dispute(string,string)
+    const selector = SELECTORS.create_dispute;
     const data = selector + encodeString(terms).slice(2) + encodeString(evidence).slice(2);
     const hash = await rpc('eth_sendTransaction', [{
       from: wallet,
@@ -223,8 +216,7 @@ async function lookupDispute() {
   statusDiv.innerHTML = '<div class="status status-info"><span class="spinner"></span>Looking up...</div>';
 
   try {
-    // get_dispute(string) selector
-    const selector = '0x2e046461'; // get_dispute(string)
+    const selector = SELECTORS.get_dispute;
     const data = selector + encodeString(id).slice(2);
     const result = await rpc('eth_call', [{ to: CONTRACT, data }, 'latest']);
     const dispute = decodeJson(result);
@@ -282,8 +274,7 @@ async function submitDefense(disputeId) {
   statusDiv.innerHTML = '<div class="status status-info"><span class="spinner"></span>Submitting defense...</div>';
 
   try {
-    // submit_defense(string,string) selector
-    const selector = '0x9b8e4c1f'; // submit_defense(string,string)
+    const selector = SELECTORS.submit_defense;
     const data = selector + encodeString(disputeId).slice(2) + encodeString(evidence).slice(2);
     const hash = await rpc('eth_sendTransaction', [{
       from: wallet,
@@ -329,8 +320,7 @@ async function runArbitration(disputeId) {
   }, 1000);
 
   try {
-    // run_arbitration(string) selector
-    const selector = '0x7c8a9d2e'; // run_arbitration(string)
+    const selector = SELECTORS.run_arbitration;
     const data = selector + encodeString(disputeId).slice(2);
     const hash = await rpc('eth_sendTransaction', [{
       from: wallet,
@@ -344,7 +334,7 @@ async function runArbitration(disputeId) {
       await sleep(5000);
       
       try {
-        const getSelector = '0x2e046461'; // get_dispute(string)
+        const getSelector = SELECTORS.get_dispute;
         const getData = getSelector + encodeString(disputeId).slice(2);
         const result = await rpc('eth_call', [{ to: CONTRACT, data: getData }, 'latest']);
         const dispute = decodeJson(result);
@@ -431,8 +421,7 @@ async function loadDisputes() {
   list.innerHTML = '<div class="loading">Loading...</div>';
 
   try {
-    // total_disputes() selector
-    const totalSelector = '0x3fa4f245'; // total_disputes()
+    const totalSelector = SELECTORS.total_disputes;
     const totalHex = await rpc('eth_call', [{ to: CONTRACT, data: totalSelector }, 'latest']);
     const total = parseInt(totalHex, 16);
 
