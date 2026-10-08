@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM-Jury — Decentralized AI Arbitration</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0f; color: #e0e0e0; min-height: 100vh; }
+.container { max-width: 900px; margin: 0 auto; padding: 2rem; }
+h1 { font-size: 2rem; margin-bottom: 0.5rem; background: linear-gradient(135deg, #6366f1, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.subtitle { color: #888; margin-bottom: 2rem; }
+.card { background: #14141f; border: 1px solid #2a2a3a; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; }
+.card h2 { font-size: 1.1rem; margin-bottom: 1rem; color: #a5b4fc; }
+input, textarea { width: 100%; padding: 0.75rem 1rem; background: #0a0a0f; border: 1px solid #2a2a3a; border-radius: 8px; color: #e0e0e0; font-size: 1rem; margin-bottom: 0.75rem; font-family: inherit; }
+input:focus, textarea:focus { outline: none; border-color: #6366f1; }
+textarea { min-height: 120px; resize: vertical; }
+button { padding: 0.75rem 1.5rem; background: linear-gradient(135deg, #6366f1, #8b5cf6); border: none; border-radius: 8px; color: white; font-size: 1rem; cursor: pointer; font-weight: 600; transition: opacity 0.2s; }
+button:hover { opacity: 0.9; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-secondary { background: #2a2a3a; }
+.btn-success { background: linear-gradient(135deg, #10b981, #059669); }
+.btn-warning { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.status { padding: 0.75rem 1rem; border-radius: 8px; margin-top: 0.75rem; font-size: 0.9rem; }
+.status-success { background: #064e3b; color: #6ee7b7; }
+.status-error { background: #7f1d1d; color: #fca5a5; }
+.status-info { background: #1e3a5f; color: #93c5fd; }
+.status-warning { background: #78350f; color: #fcd34d; }
+.verdict { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; }
+.verdict-CLAIMANT_FAVORED { background: #064e3b; color: #6ee7b7; }
+.verdict-RESPONDENT_FAVORED { background: #1e3a5f; color: #93c5fd; }
+.verdict-DISMISSED { background: #78350f; color: #fcd34d; }
+.dispute-item { background: #0a0a0f; border: 1px solid #2a2a3a; border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; }
+.dispute-item .meta { color: #666; font-size: 0.8rem; margin-top: 0.5rem; }
+.dispute-item .field { margin-top: 0.5rem; }
+.dispute-item .field-label { color: #a5b4fc; font-size: 0.8rem; font-weight: 600; margin-bottom: 0.25rem; }
+.dispute-item .field-value { color: #aaa; font-size: 0.85rem; white-space: pre-wrap; }
+.loading { text-align: center; padding: 2rem; color: #666; }
+.error-banner { background: #7f1d1d; color: #fca5a5; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; }
+.connect-btn { margin-bottom: 1rem; }
+.hidden { display: none; }
+.spinner { display: inline-block; width: 1rem; height: 1rem; border: 2px solid #6366f1; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 0.5rem; vertical-align: middle; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.progress-bar { height: 4px; background: #2a2a3a; border-radius: 2px; margin-top: 0.75rem; overflow: hidden; }
+.progress-bar-fill { height: 100%; background: linear-gradient(90deg, #6366f1, #8b5cf6); transition: width 0.5s ease; }
+.steps { display: flex; gap: 0.5rem; margin: 1rem 0; flex-wrap: wrap; }
+.step { flex: 1; min-width: 120px; padding: 0.5rem; border-radius: 6px; text-align: center; font-size: 0.75rem; background: #1a1a2e; color: #666; border: 1px solid #2a2a3a; }
+.step.active { background: #1e1b4b; color: #a5b4fc; border-color: #6366f1; }
+.step.completed { background: #064e3b; color: #6ee7b7; border-color: #10b981; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>LLM-Jury</h1>
+  <p class="subtitle">Decentralized arbitration platform where AI validators resolve peer-to-peer text contract disputes — Bradbury Testnet</p>
+
+  <div id="errorBanner" class="error-banner hidden"></div>
+
+  <div id="connectSection">
+    <button id="connectBtn" class="connect-btn">Connect Wallet</button>
+    <p style="color:#666;font-size:0.85rem;">Connect a wallet with Bradbury Testnet (chain 4221) configured</p>
+  </div>
+
+  <div id="appSection" class="hidden">
+    <div class="card">
+      <h2>Create Dispute</h2>
+      <textarea id="contractTerms" placeholder="Enter the contract terms or agreement text..."></textarea>
+      <textarea id="claimantEvidence" placeholder="Enter claimant's evidence..."></textarea>
+      <button id="createBtn" onclick="createDispute()">Create Dispute</button>
+      <div id="createStatus"></div>
+    </div>
+
+    <div class="card">
+      <h2>Look Up Dispute</h2>
+      <input type="text" id="lookupId" placeholder="dispute-1" />
+      <button class="btn-secondary" onclick="lookupDispute()">Look Up</button>
+      <div id="lookupStatus"></div>
+    </div>
+
+    <div class="card">
+      <h2>All Disputes</h2>
+      <button class="btn-secondary" onclick="loadDisputes()" style="margin-bottom:1rem;">Refresh</button>
+      <div id="disputesList"><div class="loading">Loading...</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Contract Info</h2>
+      <p style="font-size:0.85rem;color:#888;">
+        Network: Bradbury Testnet (4221)<br>
+        <a href="https://explorer-bradbury.genlayer.com" target="_blank" style="color:#6366f1;">View on Explorer →</a>
+      </p>
+    </div>
+  </div>
+</div>
+
+<script>
+const CONTRACT = '0x0000000000000000000000000000000000000000'; // Will be updated after deploy
+const RPC = 'https://rpc-bradbury.genlayer.com';
+const EXPLORER = 'https://explorer-bradbury.genlayer.com';
+
+let wallet = null;
+
+// Function selectors (keccak256 first 4 bytes)
+const SELECTORS = {
+  create_dispute: '0x', // Will compute
+  submit_defense: '0x',
+  run_arbitration: '0x',
+  get_dispute: '0x',
+  total_disputes: '0x',
+  list_pending: '0x',
+};
+
+// Compute selectors
+async function computeSelectors() {
+  // We'll use a simple approach: call the contract with known function signatures
+  // For now, use placeholder - will be set after deployment
+}
+
+// ABI encoding helpers
+function encodeString(str) {
+  const encoded = new TextEncoder().encode(str);
+  const padded = new Uint8Array(Math.ceil((encoded.length + 1) / 32) * 32);
+  padded.set(encoded);
+  const lenHex = encoded.length.toString(16).padStart(64, '0');
+  return '0x' + lenHex + Array.from(padded).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function rpc(method, params) {
+  const res = await fetch(RPC, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', method, params, id: 1 })
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  return data.result;
+}
+
+function decodeString(hex) {
+  if (!hex || hex === '0x') return '';
+  const bytes = new Uint8Array(hex.slice(2).match(/.{2}/g).map(b => parseInt(b, 16)));
+  const len = parseInt(hex.slice(2, 66), 16);
+  return new TextDecoder().decode(bytes.slice(0, len));
+}
+
+function decodeJson(hex) {
+  const str = decodeString(hex);
+  try { return JSON.parse(str); } catch { return str; }
+}
+
+async function connectWallet() {
+  try {
+    if (!window.ethereum) {
+      showError('No wallet found. Please install MetaMask or another Web3 wallet.');
+      return;
+    }
+
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: '0x107d' }],
+      });
+    } catch (switchError) {
+      await window.ethereum.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId: '0x107d',
+          chainName: 'GenLayer Bradbury Testnet',
+          nativeCurrency: { name: 'GEN', symbol: 'GEN', decimals: 18 },
+          rpcUrls: [RPC],
+          blockExplorerUrls: [EXPLORER],
+        }],
+      });
+    }
+
+    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    wallet = accounts[0];
+    
+    document.getElementById('connectSection').classList.add('hidden');
+    document.getElementById('appSection').classList.remove('hidden');
+    hideError();
+    loadDisputes();
+  } catch (e) {
+    showError('Connection failed: ' + e.message);
+  }
+}
+
+async function createDispute() {
+  const terms = document.getElementById('contractTerms').value.trim();
+  const evidence = document.getElementById('claimantEvidence').value.trim();
+  if (!terms || !evidence) return;
+
+  const btn = document.getElementById('createBtn');
+  btn.disabled = true;
+  document.getElementById('createStatus').innerHTML = '<div class="status status-info"><span class="spinner"></span>Creating dispute...</div>';
+
+  try {
+    // create_dispute(string,string) selector
+    const selector = '0x8f283970'; // create_dispute(string,string)
+    const data = selector + encodeString(terms).slice(2) + encodeString(evidence).slice(2);
+    const hash = await rpc('eth_sendTransaction', [{
+      from: wallet,
+      to: CONTRACT,
+      data: data,
+    }]);
+
+    document.getElementById('createStatus').innerHTML = `<div class="status status-success">Created! Tx: <a href="${EXPLORER}/tx/${hash}" target="_blank" style="color:#6ee7b7;">${hash.slice(0, 20)}...</a></div>`;
+    document.getElementById('contractTerms').value = '';
+    document.getElementById('claimantEvidence').value = '';
+    setTimeout(loadDisputes, 3000);
+  } catch (e) {
+    document.getElementById('createStatus').innerHTML = `<div class="status status-error">${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function lookupDispute() {
+  const id = document.getElementById('lookupId').value.trim();
+  if (!id) return;
+
+  const statusDiv = document.getElementById('lookupStatus');
+  statusDiv.innerHTML = '<div class="status status-info"><span class="spinner"></span>Looking up...</div>';
+
+  try {
+    // get_dispute(string) selector
+    const selector = '0x2e046461'; // get_dispute(string)
+    const data = selector + encodeString(id).slice(2);
+    const result = await rpc('eth_call', [{ to: CONTRACT, data }, 'latest']);
+    const dispute = decodeJson(result);
+
+    if (!dispute.exists) {
+      statusDiv.innerHTML = '<div class="status status-error">Dispute not found</div>';
+      return;
+    }
+
+    let html = `<div class="dispute-item">`;
+    html += `<div class="meta">ID: ${dispute.dispute_id} · Status: ${dispute.status}</div>`;
+    
+    if (dispute.status === 'RESOLVED') {
+      html += `<div style="margin-top:0.5rem;"><span class="verdict verdict-${dispute.verdict}">${dispute.verdict}</span></div>`;
+      if (dispute.justification) {
+        html += `<p style="font-size:0.85rem;color:#aaa;margin-top:0.5rem;">${dispute.justification}</p>`;
+      }
+    }
+
+    html += `<div class="field"><div class="field-label">Contract Terms</div><div class="field-value">${dispute.contract_terms}</div></div>`;
+    html += `<div class="field"><div class="field-label">Claimant Evidence</div><div class="field-value">${dispute.claimant_evidence}</div></div>`;
+    html += `<div class="field"><div class="field-label">Respondent Evidence</div><div class="field-value">${dispute.respondent_evidence || '(not submitted)'}</div></div>`;
+
+    // Action buttons
+    if (dispute.status === 'PENDING' && !dispute.respondent_evidence) {
+      html += `<div style="margin-top:0.75rem;"><button class="btn-success" onclick="showSubmitDefense('${dispute.dispute_id}')">Submit Defense</button></div>`;
+    } else if (dispute.status === 'PENDING' && dispute.respondent_evidence) {
+      html += `<div style="margin-top:0.75rem;"><button onclick="runArbitration('${dispute.dispute_id}')">Trigger AI Jury</button></div>`;
+    }
+
+    html += `</div>`;
+    statusDiv.innerHTML = html;
+  } catch (e) {
+    statusDiv.innerHTML = `<div class="status status-error">${e.message}</div>`;
+  }
+}
+
+function showSubmitDefense(disputeId) {
+  const statusDiv = document.getElementById('lookupStatus');
+  statusDiv.innerHTML = `
+    <div class="card" style="margin-top:1rem;">
+      <h3 style="color:#a5b4fc;margin-bottom:0.5rem;">Submit Defense for ${disputeId}</h3>
+      <textarea id="defenseEvidence" placeholder="Enter respondent's evidence..."></textarea>
+      <button class="btn-success" onclick="submitDefense('${disputeId}')">Submit Defense</button>
+      <div id="defenseStatus"></div>
+    </div>
+  `;
+}
+
+async function submitDefense(disputeId) {
+  const evidence = document.getElementById('defenseEvidence').value.trim();
+  if (!evidence) return;
+
+  const statusDiv = document.getElementById('defenseStatus');
+  statusDiv.innerHTML = '<div class="status status-info"><span class="spinner"></span>Submitting defense...</div>';
+
+  try {
+    // submit_defense(string,string) selector
+    const selector = '0x9b8e4c1f'; // submit_defense(string,string)
+    const data = selector + encodeString(disputeId).slice(2) + encodeString(evidence).slice(2);
+    const hash = await rpc('eth_sendTransaction', [{
+      from: wallet,
+      to: CONTRACT,
+      data: data,
+    }]);
+
+    statusDiv.innerHTML = `<div class="status status-success">Defense submitted! Tx: <a href="${EXPLORER}/tx/${hash}" target="_blank" style="color:#6ee7b7;">${hash.slice(0, 20)}...</a></div>`;
+    setTimeout(() => lookupDispute(), 3000);
+  } catch (e) {
+    statusDiv.innerHTML = `<div class="status status-error">${e.message}</div>`;
+  }
+}
+
+async function runArbitration(disputeId) {
+  const statusDiv = document.getElementById('lookupStatus');
+  
+  // Show progress
+  statusDiv.innerHTML = `
+    <div class="status status-info" style="margin-top:0.75rem;">
+      <span class="spinner"></span>AI Jury is reviewing evidence (This may take up to 45 seconds)...
+    </div>
+    <div class="progress-bar"><div class="progress-bar-fill" id="progress-bar" style="width:0%"></div></div>
+    <div class="steps">
+      <div class="step active" id="step-1">Awaiting Defense</div>
+      <div class="step" id="step-2">Ready for Jury</div>
+      <div class="step" id="step-3">Resolving</div>
+      <div class="step" id="step-4">Resolved</div>
+    </div>
+  `;
+
+  // Update steps
+  document.getElementById('step-1').classList.add('completed');
+  document.getElementById('step-2').classList.add('completed');
+  document.getElementById('step-3').classList.add('active');
+
+  // Animate progress bar
+  let progress = 0;
+  const progressInterval = setInterval(() => {
+    progress = Math.min(progress + 2, 90);
+    const bar = document.getElementById('progress-bar');
+    if (bar) bar.style.width = progress + '%';
+  }, 1000);
+
+  try {
+    // run_arbitration(string) selector
+    const selector = '0x7c8a9d2e'; // run_arbitration(string)
+    const data = selector + encodeString(disputeId).slice(2);
+    const hash = await rpc('eth_sendTransaction', [{
+      from: wallet,
+      to: CONTRACT,
+      data: data,
+    }]);
+
+    // Poll for result
+    let found = false;
+    for (let i = 0; i < 12 && !found; i++) {
+      await sleep(5000);
+      
+      try {
+        const getSelector = '0x2e046461'; // get_dispute(string)
+        const getData = getSelector + encodeString(disputeId).slice(2);
+        const result = await rpc('eth_call', [{ to: CONTRACT, data: getData }, 'latest']);
+        const dispute = decodeJson(result);
+        
+        if (dispute.status === 'RESOLVED') {
+          found = true;
+          clearInterval(progressInterval);
+          
+          document.getElementById('step-3').classList.remove('active');
+          document.getElementById('step-3').classList.add('completed');
+          document.getElementById('step-4').classList.add('completed');
+          
+          statusDiv.innerHTML = `
+            <div class="status status-success" style="margin-top:0.75rem;">
+              <span class="verdict verdict-${dispute.verdict}">${dispute.verdict}</span>
+              ${dispute.justification ? `<p style="font-size:0.85rem;color:#aaa;margin-top:0.5rem;">${dispute.justification}</p>` : ''}
+              <p style="font-size:0.8rem;color:#666;margin-top:0.5rem;">
+                Tx: <a href="${EXPLORER}/tx/${hash}" target="_blank" style="color:#6ee7b7;">${hash.slice(0, 20)}...</a>
+              </p>
+            </div>
+          `;
+        }
+      } catch (pollErr) {
+        // Keep polling
+      }
+    }
+
+    if (!found) {
+      clearInterval(progressInterval);
+      statusDiv.innerHTML = `
+        <div class="status status-warning" style="margin-top:0.75rem;">
+          <p>Network busy. The transaction may still be processing.</p>
+          <button class="btn-warning" onclick="runArbitration('${disputeId}')" style="margin-top:0.75rem;">Retry</button>
+          <button class="btn-secondary" onclick="lookupDispute()" style="margin-top:0.5rem;margin-left:0.5rem;">Check Status</button>
+        </div>
+      `;
+    }
+
+  } catch (e) {
+    clearInterval(progressInterval);
+    
+    if (e.message && (e.message.includes('timeout') || e.message.includes('LEADER_TIMEOUT'))) {
+      statusDiv.innerHTML = `
+        <div class="status status-info" style="margin-top:0.75rem;">
+          <span class="spinner"></span>Network timeout. Checking if arbitration succeeded...
+        </div>
+      `;
+      
+      await sleep(10000);
+      
+      try {
+        const getSelector = '0x2e046461';
+        const getData = getSelector + encodeString(disputeId).slice(2);
+        const result = await rpc('eth_call', [{ to: CONTRACT, data: getData }, 'latest']);
+        const dispute = decodeJson(result);
+        
+        if (dispute.status === 'RESOLVED') {
+          statusDiv.innerHTML = `
+            <div class="status status-success" style="margin-top:0.75rem;">
+              <span class="verdict verdict-${dispute.verdict}">${dispute.verdict}</span>
+              ${dispute.justification ? `<p style="font-size:0.85rem;color:#aaa;margin-top:0.5rem;">${dispute.justification}</p>` : ''}
+            </div>
+          `;
+          return;
+        }
+      } catch (checkErr) {
+        // Still not found
+      }
+      
+      statusDiv.innerHTML = `
+        <div class="status status-warning" style="margin-top:0.75rem;">
+          <p>Network busy. Please retry arbitration.</p>
+          <button class="btn-warning" onclick="runArbitration('${disputeId}')" style="margin-top:0.75rem;">Retry</button>
+        </div>
+      `;
+    } else {
+      statusDiv.innerHTML = `<div class="status status-error" style="margin-top:0.75rem;">${e.message}</div>`;
+    }
+  }
+}
+
+async function loadDisputes() {
+  const list = document.getElementById('disputesList');
+  list.innerHTML = '<div class="loading">Loading...</div>';
+
+  try {
+    // total_disputes() selector
+    const totalSelector = '0x3fa4f245'; // total_disputes()
+    const totalHex = await rpc('eth_call', [{ to: CONTRACT, data: totalSelector }, 'latest']);
+    const total = parseInt(totalHex, 16);
+
+    if (total === 0) {
+      list.innerHTML = '<div class="loading">No disputes yet. Create one above!</div>';
+      return;
+    }
+
+    let html = '';
+    for (let i = 1; i <= total; i++) {
+      const id = `dispute-${i}`;
+      const getSelector = '0x2e046461'; // get_dispute(string)
+      const getData = getSelector + encodeString(id).slice(2);
+      const result = await rpc('eth_call', [{ to: CONTRACT, data: getData }, 'latest']);
+      const dispute = decodeJson(result);
+
+      if (!dispute.exists) continue;
+
+      let actionHtml = '';
+      if (dispute.status === 'PENDING' && !dispute.respondent_evidence) {
+        actionHtml = `<div style="margin-top:0.5rem;"><span class="step" style="display:inline-block;padding:0.25rem 0.5rem;font-size:0.7rem;">Awaiting Defense</span></div>`;
+      } else if (dispute.status === 'PENDING' && dispute.respondent_evidence) {
+        actionHtml = `<div style="margin-top:0.5rem;"><button class="btn-success" onclick="runArbitration('${dispute.dispute_id}')" style="padding:0.5rem 1rem;font-size:0.85rem;">Trigger AI Jury</button></div>`;
+      }
+
+      let verdictHtml = '';
+      if (dispute.status === 'RESOLVED') {
+        verdictHtml = `<div style="margin-top:0.5rem;"><span class="verdict verdict-${dispute.verdict}">${dispute.verdict}</span></div>`;
+      }
+
+      html += `
+        <div class="dispute-item">
+          <div class="meta">ID: ${dispute.dispute_id} · Status: ${dispute.status} · Created: ${new Date(dispute.created_at * 1000).toLocaleString()}</div>
+          ${verdictHtml}
+          ${actionHtml}
+        </div>
+      `;
+    }
+
+    list.innerHTML = html || '<div class="loading">No disputes found.</div>';
+  } catch (e) {
+    list.innerHTML = `<div class="status status-error">Error: ${e.message}</div>`;
+  }
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorBanner');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+function hideError() {
+  document.getElementById('errorBanner').classList.add('hidden');
+}
+
+document.getElementById('connectBtn').addEventListener('click', connectWallet);
+</script>
+</body>
+</html>
