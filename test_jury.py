@@ -18,7 +18,7 @@ import sys
 import time
 
 # Configuration
-CONTRACT = '0xb8d96Dca02F3BFd789F198deA138625621f52Ee2'
+CONTRACT = '0x57697b45998f846c73E90d7c6340ab71dB0e41eD'
 RPC = 'https://rpc-bradbury.genlayer.com'
 CHAIN_ID = 4221
 KEYSTORE_PASSWORD = 'Okikiola1!'

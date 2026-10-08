@@ -94,7 +94,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 </div>
 
 <script>
-const CONTRACT = '0xb8d96Dca02F3BFd789F198deA138625621f52Ee2';
+const CONTRACT = '0x734C4750a65e8ce888f2F41833E52aC719c983e1';
 const RPC = 'https://rpc-bradbury.genlayer.com';
 const EXPLORER = 'https://explorer-bradbury.genlayer.com';
 
@@ -110,13 +110,57 @@ const SELECTORS = {
   list_pending: '0x66596844',
 };
 
-// ABI encoding helpers
-function encodeString(str) {
+// GenLayer calldata encoding helpers
+function encodeULEB128(value) {
+  const bytes = [];
+  do {
+    let byte = value & 0x7f;
+    value >>>= 7;
+    if (value !== 0) byte |= 0x80;
+    bytes.push(byte);
+  } while (value !== 0);
+  return bytes;
+}
+
+function encodeGenLayerString(str) {
   const encoded = new TextEncoder().encode(str);
-  const padded = new Uint8Array(Math.ceil((encoded.length + 1) / 32) * 32);
-  padded.set(encoded);
-  const lenHex = encoded.length.toString(16).padStart(64, '0');
-  return '0x' + lenHex + Array.from(padded).map(b => b.toString(16).padStart(2, '0')).join('');
+  const lenBytes = encodeULEB128(encoded.length);
+  return [...lenBytes, ...encoded];
+}
+
+function encodeGenLayerArray(items) {
+  const lenBytes = encodeULEB128(items.length);
+  const result = [...lenBytes];
+  for (const item of items) {
+    if (typeof item === 'string') {
+      result.push(...encodeGenLayerString(item));
+    } else if (Array.isArray(item)) {
+      result.push(...encodeGenLayerArray(item));
+    }
+  }
+  return result;
+}
+
+function encodeGenLayerCalldata(method, args) {
+  // Format: 0x06 (map tag) + "method" key + method value + "args" key + args value
+  const result = [0x06]; // map tag
+  // Key: "method"
+  result.push(...encodeGenLayerString("method"));
+  // Value: method name
+  result.push(...encodeGenLayerString(method));
+  // Key: "args"
+  result.push(...encodeGenLayerString("args"));
+  // Value: array of args
+  result.push(...encodeGenLayerArray(args));
+  return result;
+}
+
+function bytesToHex(bytes) {
+  return '0x' + Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function encodeCalldata(method, args) {
+  return bytesToHex(encodeGenLayerCalldata(method, args));
 }
 
 async function rpc(method, params) {
@@ -189,8 +233,7 @@ async function createDispute() {
   document.getElementById('createStatus').innerHTML = '<div class="status status-info"><span class="spinner"></span>Creating dispute...</div>';
 
   try {
-    const selector = SELECTORS.create_dispute;
-    const data = selector + encodeString(terms).slice(2) + encodeString(evidence).slice(2);
+    const data = encodeCalldata('create_dispute', [terms, evidence]);
     const hash = await rpc('eth_sendTransaction', [{
       from: wallet,
       to: CONTRACT,
@@ -216,8 +259,7 @@ async function lookupDispute() {
   statusDiv.innerHTML = '<div class="status status-info"><span class="spinner"></span>Looking up...</div>';
 
   try {
-    const selector = SELECTORS.get_dispute;
-    const data = selector + encodeString(id).slice(2);
+    const data = encodeCalldata('get_dispute', [id]);
     const result = await rpc('eth_call', [{ to: CONTRACT, data }, 'latest']);
     const dispute = decodeJson(result);
 
@@ -274,8 +316,7 @@ async function submitDefense(disputeId) {
   statusDiv.innerHTML = '<div class="status status-info"><span class="spinner"></span>Submitting defense...</div>';
 
   try {
-    const selector = SELECTORS.submit_defense;
-    const data = selector + encodeString(disputeId).slice(2) + encodeString(evidence).slice(2);
+    const data = encodeCalldata('submit_defense', [disputeId, evidence]);
     const hash = await rpc('eth_sendTransaction', [{
       from: wallet,
       to: CONTRACT,
@@ -320,8 +361,7 @@ async function runArbitration(disputeId) {
   }, 1000);
 
   try {
-    const selector = SELECTORS.run_arbitration;
-    const data = selector + encodeString(disputeId).slice(2);
+    const data = encodeCalldata('run_arbitration', [disputeId]);
     const hash = await rpc('eth_sendTransaction', [{
       from: wallet,
       to: CONTRACT,
@@ -334,8 +374,7 @@ async function runArbitration(disputeId) {
       await sleep(5000);
       
       try {
-        const getSelector = SELECTORS.get_dispute;
-        const getData = getSelector + encodeString(disputeId).slice(2);
+        const getData = encodeCalldata('get_dispute', [disputeId]);
         const result = await rpc('eth_call', [{ to: CONTRACT, data: getData }, 'latest']);
         const dispute = decodeJson(result);
         
@@ -421,8 +460,8 @@ async function loadDisputes() {
   list.innerHTML = '<div class="loading">Loading...</div>';
 
   try {
-    const totalSelector = SELECTORS.total_disputes;
-    const totalHex = await rpc('eth_call', [{ to: CONTRACT, data: totalSelector }, 'latest']);
+    const totalData = encodeCalldata('total_disputes', []);
+    const totalHex = await rpc('eth_call', [{ to: CONTRACT, data: totalData }, 'latest']);
     const total = parseInt(totalHex, 16);
 
     if (total === 0) {
@@ -433,8 +472,7 @@ async function loadDisputes() {
     let html = '';
     for (let i = 1; i <= total; i++) {
       const id = `dispute-${i}`;
-      const getSelector = '0x2e046461'; // get_dispute(string)
-      const getData = getSelector + encodeString(id).slice(2);
+      const getData = encodeCalldata('get_dispute', [id]);
       const result = await rpc('eth_call', [{ to: CONTRACT, data: getData }, 'latest']);
       const dispute = decodeJson(result);
 

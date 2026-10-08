@@ -1,36 +1,66 @@
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 
-"""
-LLM-Jury — Decentralized arbitration platform where AI validators resolve
-peer-to-peer text contract disputes.
-
-PURPOSE
-    Two parties submit contract terms and evidence. A jury of AI validators
-    independently reviews the case and produces a verdict with justification.
-    Majority consensus determines the outcome.
-
-CONSENSUS MODEL
-    gl.vm.run_nondet with leader/validator pattern. Each validator independently
-    reviews the contract terms against both evidence inputs and produces a
-    verdict. Majority (>50%) wins.
-
-VERDICTS
-    CLAIMANT_FAVORED   — Contract terms support the claimant's position
-    RESPONDENT_FAVORED — Contract terms support the respondent's position
-    DISMISSED          — Case lacks merit or evidence is insufficient
-
-STATE
-    disputes   TreeMap[str, Dispute]  — keyed by dispute_id (str)
-    next_id    u256                   — global counter
-"""
+"""LLM-Jury — decentralized arbitration via AI validators."""
 
 import json
 import re
 from datetime import datetime, timezone
 from dataclasses import dataclass
-from typing import Any
 
 from genlayer import *
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers (GenVM doesn't support @staticmethod or local imports)
+# ---------------------------------------------------------------------------
+
+def _arbitrate(contract_terms: str, claimant_evidence: str, respondent_evidence: str) -> dict:
+    """Run AI arbitration: compare contract terms against both evidence sets."""
+    prompt = (
+        "You are an impartial AI arbitrator. Review the contract terms and evidence from both parties.\n\n"
+        f"CONTRACT TERMS:\n{contract_terms}\n\n"
+        f"CLAIMANT EVIDENCE:\n{claimant_evidence}\n\n"
+        f"RESPONDENT EVIDENCE:\n{respondent_evidence}\n\n"
+        "Determine which party the contract terms favor based on the evidence provided.\n\n"
+        "Respond with ONLY a valid JSON object in this exact format:\n"
+        '{"verdict": "CLAIMANT_FAVORED" | "RESPONDENT_FAVORED" | "DISMISSED", "justification": "brief legal reasoning"}\n\n'
+        "Rules:\n"
+        "- CLAIMANT_FAVORED: Contract terms and evidence support the claimant's position\n"
+        "- RESPONDENT_FAVORED: Contract terms and evidence support the respondent's position\n"
+        "- DISMISSED: Case lacks merit, evidence is insufficient, or contract terms are unclear\n"
+        "- Default to DISMISSED if evidence is ambiguous\n"
+        "- Do NOT include any text outside the JSON object"
+    )
+    raw_response = gl.nondet.exec_prompt(prompt).strip()
+    parsed = _parse_verdict_json(raw_response)
+    return {
+        "verdict": parsed.get("verdict", "DISMISSED"),
+        "justification": parsed.get("justification", ""),
+    }
+
+
+def _parse_verdict_json(raw: str) -> dict:
+    """Parse LLM verdict JSON output with defensive cleanup."""
+    raw = re.sub(r'```json\s*', '', raw, flags=re.IGNORECASE)
+    raw = re.sub(r'```\s*', '', raw)
+    match = re.search(r'\{.*\}', raw, flags=re.DOTALL)
+    if match:
+        raw = match.group()
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            verdict = data.get("verdict", "DISMISSED")
+            justification = data.get("justification", "")
+            if verdict not in ("CLAIMANT_FAVORED", "RESPONDENT_FAVORED", "DISMISSED"):
+                verdict = "DISMISSED"
+            return {"verdict": verdict, "justification": justification}
+    except (json.JSONDecodeError, KeyError):
+        pass
+    raw_upper = raw.upper()
+    for v in ("CLAIMANT_FAVORED", "RESPONDENT_FAVORED", "DISMISSED"):
+        if v in raw_upper:
+            return {"verdict": v, "justification": raw[:500]}
+    return {"verdict": "DISMISSED", "justification": "Could not parse LLM output"}
 
 
 # ---------------------------------------------------------------------------
@@ -126,13 +156,18 @@ class LLMJury(gl.Contract):
             raise gl.vm.UserError("Respondent defense not yet submitted")
 
         # ---- nondeterministic round --------------------------------------
-        def leader_fn() -> dict:
-            return self._arbitrate(dispute.contract_terms, dispute.claimant_evidence, dispute.respondent_evidence)
+        # Extract values BEFORE nondet to avoid capturing self (storage) in closures
+        terms = dispute.contract_terms
+        claimant = dispute.claimant_evidence
+        respondent = dispute.respondent_evidence
 
-        def validator_fn(leader_res: Any) -> bool:
+        def leader_fn() -> dict:
+            return _arbitrate(terms, claimant, respondent)
+
+        def validator_fn(leader_res) -> bool:
             if not isinstance(leader_res, gl.vm.Return):
                 return False
-            mine = self._arbitrate(dispute.contract_terms, dispute.claimant_evidence, dispute.respondent_evidence)
+            mine = _arbitrate(terms, claimant, respondent)
             return mine.get("verdict") == leader_res.calldata.get("verdict")
 
         result = gl.vm.run_nondet(leader_fn, validator_fn)
@@ -152,67 +187,6 @@ class LLMJury(gl.Contract):
         self.disputes[dispute_id] = dispute
 
         return verdict
-
-    # ------------------------------------------------------------------
-    # AI helpers
-    # ------------------------------------------------------------------
-
-    def _arbitrate(self, contract_terms: str, claimant_evidence: str, respondent_evidence: str) -> dict:
-        """Run AI arbitration: compare contract terms against both evidence sets."""
-        prompt = (
-            "You are an impartial AI arbitrator. Review the contract terms and evidence from both parties.\n\n"
-            f"CONTRACT TERMS:\n{contract_terms}\n\n"
-            f"CLAIMANT EVIDENCE:\n{claimant_evidence}\n\n"
-            f"RESPONDENT EVIDENCE:\n{respondent_evidence}\n\n"
-            "Determine which party the contract terms favor based on the evidence provided.\n\n"
-            "Respond with ONLY a valid JSON object in this exact format:\n"
-            '{"verdict": "CLAIMANT_FAVORED" | "RESPONDENT_FAVORED" | "DISMISSED", "justification": "brief legal reasoning"}\n\n'
-            "Rules:\n"
-            "- CLAIMANT_FAVORED: Contract terms and evidence support the claimant's position\n"
-            "- RESPONDENT_FAVORED: Contract terms and evidence support the respondent's position\n"
-            "- DISMISSED: Case lacks merit, evidence is insufficient, or contract terms are unclear\n"
-            "- Default to DISMISSED if evidence is ambiguous\n"
-            "- Do NOT include any text outside the JSON object"
-        )
-        raw_response = gl.nondet.exec_prompt(prompt).strip()
-        parsed = self._parse_verdict_json(raw_response)
-
-        return {
-            "verdict": parsed.get("verdict", "DISMISSED"),
-            "justification": parsed.get("justification", ""),
-        }
-
-    # ------------------------------------------------------------------
-    # Defensive JSON parsing
-    # ------------------------------------------------------------------
-
-    def _parse_verdict_json(self, raw: str) -> dict:
-        """Parse LLM verdict JSON output with defensive cleanup."""
-        # Strip markdown code blocks
-        raw = re.sub(r'```json\s*', '', raw, flags=re.IGNORECASE)
-        raw = re.sub(r'```\s*', '', raw)
-        # Extract text between outermost curly braces
-        match = re.search(r'\{.*\}', raw, flags=re.DOTALL)
-        if match:
-            raw = match.group()
-        # Try to parse
-        try:
-            data = json.loads(raw)
-            if isinstance(data, dict):
-                verdict = data.get("verdict", "DISMISSED")
-                justification = data.get("justification", "")
-                if verdict not in ("CLAIMANT_FAVORED", "RESPONDENT_FAVORED", "DISMISSED"):
-                    verdict = "DISMISSED"
-                return {"verdict": verdict, "justification": justification}
-        except (json.JSONDecodeError, KeyError):
-            pass
-        # Fallback: search for verdict token in raw text
-        raw_upper = raw.upper()
-        for v in ("CLAIMANT_FAVORED", "RESPONDENT_FAVORED", "DISMISSED"):
-            if v in raw_upper:
-                return {"verdict": v, "justification": raw[:500]}
-        # Ultimate fallback
-        return {"verdict": "DISMISSED", "justification": "Could not parse LLM output"}
 
     # ------------------------------------------------------------------
     # Views
